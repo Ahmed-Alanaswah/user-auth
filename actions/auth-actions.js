@@ -1,0 +1,74 @@
+"use server";
+
+import { createAuthSession, destroySession } from "@/lib/auth";
+import { hashUserPassword, verifyPassword } from "@/lib/hash";
+import { createUser, getUserByEmail } from "@/lib/user";
+import { redirect } from "next/navigation";
+
+export async function signup(prevState, formData) {
+  const email = formData.get("email");
+  const password = formData.get("password");
+
+  let errors = {};
+
+  if (!email.includes("@")) {
+    errors.email = "please enter valid email address.";
+  }
+
+  if (password.trim().length < 8) {
+    errors.password = "password must be at least 8 character long.";
+  }
+
+  if (Object.keys(errors).length > 0) {
+    return {
+      errors,
+    };
+  }
+
+  const hashedPassword = hashUserPassword(password);
+
+  try {
+    const id = createUser(email, hashedPassword);
+    await createAuthSession(id);
+    redirect("/training");
+  } catch (error) {
+    if (error.code == "SQLITE_CONSTRAINT_UNIQUE") {
+      return {
+        errors: { email: "email already exists." },
+      };
+    }
+
+    throw error;
+  }
+}
+
+export async function login(prevState, formData) {
+  const email = formData.get("email");
+  const password = formData.get("password");
+
+  const existingUser = getUserByEmail(email);
+
+  if (!existingUser) {
+    return { errors: { email: "check your credentials" } };
+  }
+
+  const isValidPassword = verifyPassword(existingUser.password, password);
+
+  if (!password) {
+    return { errors: { email: "check your credentials" } };
+  }
+  await createAuthSession(existingUser.id);
+  redirect("/training");
+}
+
+export async function auth(mode, prevState, formData) {
+  if (mode == "login") {
+    return login(prevState, formData);
+  }
+  return signup(prevState, formData);
+}
+
+export async function Logout() {
+  await destroySession();
+  redirect("/");
+}
